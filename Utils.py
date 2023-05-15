@@ -1,6 +1,6 @@
 import torch
 from matplotlib import pyplot as plt
-from torch import Tensor, eq
+from torch import Tensor, eq, mean, rand
 from torch.nn.init import normal_, constant_
 from torch.utils.data import Dataset
 from torchvision.datasets import MNIST
@@ -74,3 +74,27 @@ def plot_mnist_eval(source: Tensor, b: int = 2):
             axs[e, c].imshow(bordered)
             axs[e, c].axis("off")
     plt.show()
+
+
+def gradient_penalty(discriminator, real: Tensor, fake: Tensor, device: str = "cpu") -> Tensor:
+    batch_size = real.size(0)
+    alpha = rand((batch_size, 1, 1, 1)).repeat(1, 1, 28, 28).to(device)
+    interpolated_images = real * alpha + fake * (1 - alpha)
+
+    # Calculate critic scores
+    mixed_scores, _ = discriminator(interpolated_images)
+
+    # Take the gradient of the scores with respect to the images
+    gradient = torch.autograd.grad(
+        inputs=interpolated_images,
+        outputs=mixed_scores,
+        grad_outputs=torch.ones_like(mixed_scores),
+        create_graph=True,
+        retain_graph=True,
+    )[0]
+    gradient = gradient.view(batch_size, -1)
+    gradient_norm = gradient.norm(2, dim=1)
+    gp = mean((gradient_norm - 1) ** 2)
+    return 10 * gp
+
+
