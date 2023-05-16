@@ -1,45 +1,44 @@
-from torch import Tensor, randn, cat
-from torch.nn import Linear, ConvTranspose2d, BatchNorm2d, ReLU, Tanh, Module, Sequential, Embedding
+from torch import Tensor, mul, normal
+from torch.nn import Linear, BatchNorm2d, Tanh, Module, Sequential, Embedding, Upsample, Conv2d, \
+    LeakyReLU
 
 
 class Generator(Module):
-    def __init__(self, z_dim: int = 100, num_classes: int = 10, embedding_dim: int = 10):
+    def __init__(self, num_classes: int = 10, embedding_dim: int = 100, img_size: int = 32):
         super(Generator, self).__init__()
 
-        self.input_dim = z_dim + embedding_dim
-        self.hidden_dim = 7 * 7 * 256
-        self.z_dim = z_dim
-
+        self.init_size = img_size // 4
+        self.embedding_dim = embedding_dim
         self.embedding = Embedding(num_classes, embedding_dim)
-        self.fc = Linear(self.input_dim, self.hidden_dim)
+        self.fc = Linear(embedding_dim, 128 * self.init_size ** 2)
 
-        self.block = Sequential(
-            BatchNorm2d(256),
-            ReLU(True),
-
-            ConvTranspose2d(256, 128, kernel_size=5, padding=2, output_padding=0, bias=False),
+        self.conv_blocks = Sequential(
             BatchNorm2d(128),
-            ReLU(True),
 
-            ConvTranspose2d(128, 64, kernel_size=5, stride=2, padding=2, output_padding=1, bias=False),
-            BatchNorm2d(64),
-            ReLU(True),
+            Upsample(scale_factor=2),
+            Conv2d(128, 128, 3, stride=1, padding=1),
+            BatchNorm2d(128, 0.8),
+            LeakyReLU(0.2, inplace=True),
 
-            ConvTranspose2d(64, 1, kernel_size=5, stride=2, padding=2, output_padding=1, bias=False),
-            Tanh()
+            Upsample(scale_factor=2),
+            Conv2d(128, 64, 3, stride=1, padding=1),
+            BatchNorm2d(64, 0.8),
+            LeakyReLU(0.2, inplace=True),
+
+            Conv2d(64, 1, 3, stride=1, padding=1),
+            Tanh(),
         )
 
-    def forward(self, label: Tensor, z: Tensor = None) -> Tensor:
-        batch_size = label.size(0)
+    def forward(self, labels: Tensor, z: Tensor = None) -> Tensor:
+        batch_size = labels.size(0)
 
         # If not provided, we generate the random noise
         if z is None:
-            z = randn((batch_size, self.z_dim), device=label.device)
+            z = normal(0, 1, (batch_size, self.embedding_dim), device=labels.device)
 
         # concat with the conditional label
-        input_ = cat([z, self.embedding(label)], dim=1)
+        input_ = mul(self.embedding(labels), z)
 
-        x = self.fc(input_)
-        x = self.block(x.view(x.size(0), 256, 7, 7))
-
-        return x
+        out = self.fc(input_)
+        out = out.view(out.size(0), 128, self.init_size, self.init_size)
+        return self.conv_blocks(out)

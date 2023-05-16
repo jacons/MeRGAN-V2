@@ -1,6 +1,6 @@
 import torch
 from matplotlib import pyplot as plt
-from torch import Tensor, eq, mean, rand
+from torch import Tensor, eq
 from torch.nn.init import normal_, constant_
 from torch.utils.data import Dataset
 from torchvision.datasets import MNIST
@@ -8,13 +8,19 @@ from torchvision.transforms import Compose, Resize, ToTensor, Normalize, ToPILIm
 
 
 def weights_init_normal(m):
-    class_name = m.__class__.__name__
+    """
+    Set weights of models
 
+    :param m: Models' layer
+    :return:
+    """
+    class_name = m.__class__.__name__
     if class_name.find("Conv") != -1:
         normal_(m.weight.data, 0.0, 0.02)
-    elif class_name.find("BatchNorm") != -1:
+
+    elif class_name.find("BatchNorm2d") != -1:
         normal_(m.weight.data, 1.0, 0.02)
-        constant_(m.bias.data, 0)
+        constant_(m.bias.data, 0.0)
 
 
 def compute_acc(predicted: Tensor, labels: Tensor):
@@ -33,22 +39,23 @@ class ExperienceDataset(Dataset):
     Custom dataset
     """
 
-    def __init__(self, x: Tensor, y: Tensor):
-        self.x = x
-        self.y = y
-        self.transformations = Compose([ToPILImage(),
-                                        Resize((28, 28)),
-                                        ToTensor(),
-                                        Normalize([0.5], [0.5])])
+    def __init__(self, image: Tensor, target: Tensor):
+        self.image, self.target = image, target
+
+        self.transformations = Compose(
+            [ToPILImage(),
+             Resize((32, 32)),
+             ToTensor(),
+             Normalize([0.5], [0.5])])
 
     def __len__(self):
-        return self.x.size(0)
+        return self.image.size(0)
 
     def __getitem__(self, idx):
-        return self.transformations(self.x[idx]), self.y[idx]
+        return self.transformations(self.image[idx]), self.target[idx]
 
 
-def custom_mnist(experiences: list[list[int]], device: str = "cpu") -> tuple[Tensor, Tensor, Tensor]:
+def custom_mnist(experiences: list[list[int]]) -> tuple[Tensor, Tensor, Tensor]:
     # Downloading the MNIST digits
     mnist_data = MNIST('../datasets', download=True, train=True)
 
@@ -73,19 +80,3 @@ def plot_mnist_eval(source: Tensor, b: int = 2):
             axs[e, c].imshow(bordered)
             axs[e, c].axis("off")
     plt.show()
-
-
-
-def gradient_penalty2(x, y, discriminator, device: str = "cpu"):
-    shape = [x.size(0)] + [1] * (x.dim() - 1)
-    alpha = torch.rand(shape, device=device)
-    z = x + alpha * (y - x)
-
-    z.requires_grad = True
-    o, _ = discriminator(z)
-    ones = torch.ones(o.size(), device=device)
-    g = torch.autograd.grad(o, z, grad_outputs=ones, create_graph=True)[0].view(z.size(0), -1)
-
-    gp = ((g.norm(p=2, dim=1) - 1) ** 2).mean()
-
-    return gp
