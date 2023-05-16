@@ -105,10 +105,6 @@ class Trainer:
                     errD = errD_real + errD_fake
                     self.optimizer_d.step()
 
-                    # Clip weights of discriminator
-                    for p in self.discriminator.parameters():
-                        p.data.clamp_(-0.1, 0.1)
-
                     ############################
                     # (2) Update G network: maximize log(D(G(z)))
                     ###########################
@@ -131,10 +127,12 @@ class Trainer:
                          history[-1][2], history[-1][3]))
 
                 if epch_expr:  # eval at each epoch
-                    self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
+                    with torch.no_grad():
+                        self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
 
             if not epch_expr:  # eval at each experience
-                self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
+                with torch.no_grad():
+                    self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
 
         self.eval_progress = stack(self.eval_progress).detach().cpu()
 
