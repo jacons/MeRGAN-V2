@@ -1,15 +1,15 @@
 from typing import Dict
 
 import torch
-from torch import randn, arange, ones, zeros, randint, cat, tensor, hstack, stack
-from torch.nn import BCELoss, NLLLoss
+from torch import randn, arange, ones, zeros, randint, cat, tensor, stack
+from torch.nn import BCELoss, NLLLoss, CrossEntropyLoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from Discriminator import Discriminator
 from Generator import Generator
-from Utils import weights_init_normal, compute_acc, ExperienceDataset, gradient_penalty
+from Utils import weights_init_normal, compute_acc, ExperienceDataset, gradient_penalty2
 
 
 class Trainer:
@@ -49,7 +49,7 @@ class Trainer:
 
         # Loss functions
         self.adversarial_loss = BCELoss().to(self.device)
-        self.auxiliary_loss = NLLLoss().to(self.device)
+        self.auxiliary_loss = CrossEntropyLoss().to(self.device)
 
         self.optimizer_g = Adam(self.generator.parameters(), lr=config["lr_g"], betas=(0.5, 0.999))
         self.optimizer_d = Adam(self.discriminator.parameters(), lr=config["lr_d"], betas=(0.5, 0.999))
@@ -84,7 +84,10 @@ class Trainer:
 
                     dis_output, aux_output = self.discriminator(real_image)
 
-                    errD_real = self.adversarial_loss(dis_output, valid) + self.auxiliary_loss(aux_output, real_label)
+                    errD_real = 0.5 * (
+                            self.adversarial_loss(dis_output, valid) +
+                            self.auxiliary_loss(aux_output, real_label))
+
                     errD_real.backward()
 
                     accuracy_real = compute_acc(aux_output, real_label)
@@ -94,10 +97,17 @@ class Trainer:
                     fake_img = self.generator(gen_label)
 
                     dis_output, aux_output = self.discriminator(fake_img.detach())
-                    errD_fake = self.adversarial_loss(dis_output, fake) + self.auxiliary_loss(aux_output, gen_label)
+                    errD_fake = 0.5 * (
+                            self.adversarial_loss(dis_output, fake) +
+                            self.auxiliary_loss(aux_output, gen_label))
+
                     errD_fake.backward()
                     errD = errD_real + errD_fake
                     self.optimizer_d.step()
+
+                    # Clip weights of discriminator
+                    for p in self.discriminator.parameters():
+                        p.data.clamp_(-0.1, 0.1)
 
                     ############################
                     # (2) Update G network: maximize log(D(G(z)))
@@ -105,7 +115,10 @@ class Trainer:
 
                     self.optimizer_g.zero_grad()
                     dis_output, aux_output = self.discriminator(fake_img)
-                    errG = self.adversarial_loss(dis_output, valid) + self.auxiliary_loss(aux_output, gen_label)
+                    errG = 0.5 * (
+                            self.adversarial_loss(dis_output, valid) +
+                            self.auxiliary_loss(aux_output, gen_label))
+
                     errG.backward()
                     self.optimizer_g.step()
 
@@ -132,9 +145,12 @@ class Trainer:
 
         device, n_epochs = self.device, self.n_epochs
         history = []
-
+        lam_gp = 10
+        n_critic = 5
+        errG, accuracy_fake = 0, 0
         usable_num = None  # Number that can be generated, because the model have seen
 
+        self.auxiliary_loss = CrossEntropyLoss().to(self.device)
         for idx, (numbers, x, y) in enumerate(experiences):
 
             usable_num = tensor(numbers) if usable_num is None else cat((usable_num, tensor(numbers)))
@@ -145,42 +161,45 @@ class Trainer:
                                 shuffle=True, batch_size=batch_size)
 
             for epoch in arange(0, n_epochs):
-                for real_image, real_label in tqdm(loader):
+                for i, (real_image, real_label) in enumerate(tqdm(loader)):
                     real_image, real_label = real_image.to(device), real_label.to(device)
                     batch_size = real_image.size(0)
 
-                    fake_img, gen_label = None, None
-                    accuracy_real, loss_critic = 0, 0
+                    gen_label = usable_num[randint(0, len(usable_num), size=(batch_size,))].to(device)
+                    fake_img = self.generator(gen_label)
 
-                    for _ in range(critic_iterations):
-                        gen_label = usable_num[randint(0, len(usable_num), size=(batch_size,))].to(device)
+                    self.optimizer_d.zero_grad()
 
-                        fake_img = self.generator(gen_label)
-                        dis_real, aux_real = self.discriminator(real_image)
-                        dis_fake, aux_fake = self.discriminator(fake_img)
-                        gp = gradient_penalty(self.discriminator, real_image, fake_img, device=device)
-
-                        loss_critic = (
-                                -(torch.mean(dis_real) - torch.mean(dis_fake))
-                                + lambda_gp * gp
-                                + self.auxiliary_loss(aux_real, real_label)
-                                + self.auxiliary_loss(aux_fake, gen_label)
-                        )
-                        accuracy_real = compute_acc(aux_real, real_label)
-
-                        self.optimizer_d.zero_grad()
-                        loss_critic.backward(retain_graph=True)
-                        self.optimizer_d.step()
+                    dis_real, aux_real = self.discriminator(real_image)
+                    errD_real = 0.5 * (-torch.mean(dis_real) + self.auxiliary_loss(aux_real, real_label))
 
                     dis_fake, aux_fake = self.discriminator(fake_img)
-                    loss_gen = -torch.mean(dis_fake) + self.auxiliary_loss(aux_fake, gen_label)
+                    errD_fake = 0.5 * (torch.mean(dis_fake) + self.auxiliary_loss(aux_fake, gen_label))
 
-                    accuracy_fake = compute_acc(aux_fake, gen_label)
-                    self.optimizer_g.zero_grad()
-                    loss_gen.backward()
-                    self.optimizer_g.step()
+                    gp = gradient_penalty2(real_image.detach(), fake_img.detach(), self.discriminator, device)
 
-                    history.append(tensor([loss_critic.item(), loss_gen.item(), accuracy_real, accuracy_fake]))
+                    errD = 0.5 * (errD_real + errD_fake) + lam_gp * gp
+
+                    errD.backward()
+                    self.optimizer_d.step()
+
+                    accuracy_real = compute_acc(aux_real, real_label)
+
+                    if i % n_critic == 0:
+                        self.optimizer_g.zero_grad()
+
+                        # Calculate G loss
+                        dis_fake, aux_fake = self.discriminator(fake_img)
+
+                        errG = 0.5 * (-torch.mean(dis_fake) + self.auxiliary_loss(aux_fake, gen_label))
+
+                        # Update G
+                        errG.backward(retain_graph=True)
+                        self.optimizer_g.step()
+
+                        accuracy_fake = compute_acc(aux_fake, gen_label)
+
+                    history.append(tensor([errD.item(), errG.item(), accuracy_real, accuracy_fake]))
 
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc real: %.6f Acc fake %.6f"
                       % (epoch + 1, n_epochs, history[-1][0], history[-1][1],

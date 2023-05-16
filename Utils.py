@@ -12,7 +12,6 @@ def weights_init_normal(m):
 
     if class_name.find("Conv") != -1:
         normal_(m.weight.data, 0.0, 0.02)
-
     elif class_name.find("BatchNorm") != -1:
         normal_(m.weight.data, 1.0, 0.02)
         constant_(m.bias.data, 0)
@@ -76,25 +75,17 @@ def plot_mnist_eval(source: Tensor, b: int = 2):
     plt.show()
 
 
-def gradient_penalty(discriminator, real: Tensor, fake: Tensor, device: str = "cpu") -> Tensor:
-    batch_size = real.size(0)
-    alpha = rand((batch_size, 1, 1, 1)).repeat(1, 1, 28, 28).to(device)
-    interpolated_images = real * alpha + fake * (1 - alpha)
 
-    # Calculate critic scores
-    mixed_scores, _ = discriminator(interpolated_images)
+def gradient_penalty2(x, y, discriminator, device: str = "cpu"):
+    shape = [x.size(0)] + [1] * (x.dim() - 1)
+    alpha = torch.rand(shape, device=device)
+    z = x + alpha * (y - x)
 
-    # Take the gradient of the scores with respect to the images
-    gradient = torch.autograd.grad(
-        inputs=interpolated_images,
-        outputs=mixed_scores,
-        grad_outputs=torch.ones_like(mixed_scores),
-        create_graph=True,
-        retain_graph=True,
-    )[0]
-    gradient = gradient.view(batch_size, -1)
-    gradient_norm = gradient.norm(2, dim=1)
-    gp = mean((gradient_norm - 1) ** 2)
-    return 10 * gp
+    z.requires_grad = True
+    o, _ = discriminator(z)
+    ones = torch.ones(o.size(), device=device)
+    g = torch.autograd.grad(o, z, grad_outputs=ones, create_graph=True)[0].view(z.size(0), -1)
 
+    gp = ((g.norm(p=2, dim=1) - 1) ** 2).mean()
 
+    return gp
