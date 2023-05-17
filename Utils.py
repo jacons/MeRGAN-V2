@@ -129,3 +129,12 @@ def generate_classes(g: Generator, num_classes: int, rows: int, device: str):
                 axs[e, c].imshow(-images[c], cmap="binary")
                 axs[e, c].axis("off")
     plt.show()
+
+
+def plot_history(history: Tensor):
+    f, axs = plt.subplots(ncols=2)
+
+    axs[0].plot(history[0])
+    axs[0].plot(history[1])
+
+    axs[1].plot(history[2])

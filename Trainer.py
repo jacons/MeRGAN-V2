@@ -93,16 +93,14 @@ class Trainer:
                     self.optimizer_d.zero_grad()
 
                     dis_real, aux_real = self.discriminator(real_image)
-                    errD_real = 0.5 * (
-                            self.adversarial_loss(dis_real, valid) +
-                            self.auxiliary_loss(aux_real, real_label))
-
                     dis_fake, aux_fake = self.discriminator(fake_img.detach())
-                    errD_fake = 0.5 * (
-                            self.adversarial_loss(dis_fake, fake) +
-                            self.auxiliary_loss(aux_fake, gen_label))
 
-                    errD = (errD_real + errD_fake) / 2
+                    errD = 0.25 * (
+                            self.adversarial_loss(dis_real, valid) +
+                            self.adversarial_loss(dis_fake, fake) +
+                            self.auxiliary_loss(aux_real, real_label) +
+                            self.auxiliary_loss(aux_fake, gen_label)
+                    )
 
                     d_acc = compute_acc(
                         concatenate([aux_real, aux_fake], dim=0),
@@ -130,13 +128,13 @@ class Trainer:
 
         return stack(history).T
 
-    def fit_bufferReplay(self, experiences, buff_img: int):
+    def fit_bufferReplay(self, experiences, buff_img: int, batch_size: int = 64):
 
         device, n_epochs = self.device, self.n_epochs
         history, usable_num = [], None
 
         jr = Join_replay(generator=self.generator,
-                         batch_size=128,
+                         batch_size=batch_size,
                          buff_img=buff_img,
                          img_size=self.img_size,
                          device=device)
@@ -179,16 +177,14 @@ class Trainer:
                     self.optimizer_d.zero_grad()
 
                     dis_real, aux_real = self.discriminator(real_image)
-                    errD_real = 0.5 * (
-                            self.adversarial_loss(dis_real, valid) +
-                            self.auxiliary_loss(aux_real, real_label))
-
                     dis_fake, aux_fake = self.discriminator(fake_img.detach())
-                    errD_fake = 0.5 * (
-                            self.adversarial_loss(dis_fake, fake) +
-                            self.auxiliary_loss(aux_fake, gen_label))
 
-                    errD = (errD_real + errD_fake) / 2
+                    errD = 0.25 * (
+                            self.adversarial_loss(dis_real, valid) +
+                            self.adversarial_loss(dis_fake, fake) +
+                            self.auxiliary_loss(aux_real, real_label) +
+                            self.auxiliary_loss(aux_fake, gen_label)
+                    )
 
                     d_acc = compute_acc(
                         concatenate([aux_real, aux_fake], dim=0),
