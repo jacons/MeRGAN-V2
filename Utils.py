@@ -47,37 +47,39 @@ class ExperienceDataset(Dataset):
 
 
 def generate_mnist_dataset():
-    if not os.path.exists("../single_digit"):
-        print("Dataset don't found...")
+    dataset_path = "../single_digit"
+    temp_path = "temp_mnist"
 
-        os.makedirs("../single_digit")
+    if not os.path.exists(dataset_path):
+        print("Dataset not found...")
+        os.makedirs(dataset_path)
 
         # Downloading the MNIST digits
-        transformations = Compose(
-            [Resize((32, 32)), ToTensor(), Normalize([0.5], [0.5])])
-        mnist_data = MNIST('temp_mnist', download=True, train=True, transform=transformations)
+        transformations = Compose([Resize((32, 32)), ToTensor(), Normalize([0.5], [0.5])])
+        mnist_data = MNIST(temp_path, download=True, train=True, transform=transformations)
 
         print("Preprocessing numbers...")
-        x, y = next(iter(DataLoader(mnist_data, shuffle=False, batch_size=mnist_data.data.size(0))))
+        dataloader = DataLoader(mnist_data, shuffle=False, batch_size=mnist_data.data.size(0))
+        x, y = next(iter(dataloader))
 
-        for n in arange(0, 10):
-            print("Saving number:", n.item())
+        for n in range(10):
+            print("Saving number:", n)
             idx = torch.where(y == n)[0]
-            torch.save([x[idx], y[idx]], "../single_digit/num_" + str(n.item()) + ".pt")
+            torch.save([x[idx], y[idx]], os.path.join(dataset_path, f"num_{n}.pt"))
 
-        shutil.rmtree("temp_mnist")
+        shutil.rmtree(temp_path)
     else:
         print("Dataset found...")
 
 
-def custom_mnist(experiences: list[list[int]]) -> tuple[list, Tensor, Tensor]:
+def custom_mnist(experiences: list[list[int]], dataset_path="../single_digit") -> tuple[list, Tensor, Tensor]:
     generate_mnist_dataset()
 
     for t_ in experiences:
         img_x, img_y = None, None
 
         for n in t_:
-            num_x, num_y = torch.load("../single_digit/num_" + str(n) + ".pt")
+            num_x, num_y = torch.load(f"{dataset_path}/num_{n}.pt")
 
             img_x = num_x if img_x is None else cat([img_x, num_x])
             img_y = num_y if img_y is None else cat([img_y, num_y])
@@ -88,19 +90,19 @@ def custom_mnist(experiences: list[list[int]]) -> tuple[list, Tensor, Tensor]:
 def plot_mnist_eval(source: Tensor):
     epochs, num_classes, img_size = source.size(0), source.size(1), source.size(2)
 
+    f, axs = plt.subplots(ncols=num_classes, nrows=epochs, figsize=(7, max(int(0.7 * epochs), 1)))
+    f.patch.set_facecolor('black')
+
     if epochs == 1:
-        f, axs = plt.subplots(ncols=num_classes, nrows=epochs, figsize=(7, 1))
-        f.patch.set_facecolor('black')
         for c in arange(num_classes):
             axs[c].imshow(-source[0, c], cmap="binary")
             axs[c].axis("off")
 
     elif epochs > 1:
-        f, axs = plt.subplots(ncols=num_classes, nrows=epochs, figsize=(7, int(0.7 * epochs)))
-        f.patch.set_facecolor('black')
         for e in arange(epochs):
             y_offset = (axs[e, 0].get_position().y0 - axs[e, 0].get_position().y1) / 2 + axs[e, 0].get_position().y1
             f.text(0.006, y_offset, "Epochs = " + str(e.item() + 1), fontsize=10, color="white")
+
             for c in arange(num_classes):
                 axs[e, c].imshow(-source[e, c], cmap="binary")
                 axs[e, c].axis("off")
@@ -108,6 +110,8 @@ def plot_mnist_eval(source: Tensor):
 
 
 def generate_classes(g: Generator, num_classes: int, rows: int, device: str):
+    rows = max(rows, 2)
+
     f, axs = plt.subplots(ncols=num_classes, nrows=rows, figsize=(7, int(0.7 * rows)))
     f.patch.set_facecolor('black')
     labels = arange(0, 10, device=device)
@@ -118,9 +122,10 @@ def generate_classes(g: Generator, num_classes: int, rows: int, device: str):
 
     with torch.no_grad():
         for e in arange(rows):
-            images = g(labels).squeeze().cpu()
             y_offset = (axs[e, 0].get_position().y0 - axs[e, 0].get_position().y1) / 2 + axs[e, 0].get_position().y1
             f.text(0.006, y_offset, "Gen = " + str(e.item() + 1), fontsize=10, color="white")
+
+            images = g(labels).squeeze().cpu()
             for c in arange(num_classes):
                 axs[e, c].imshow(-images[c], cmap="binary")
                 axs[e, c].axis("off")
@@ -154,4 +159,5 @@ def plot_history(history: Tensor):
     ax_c.set_ylabel("Accuracy")
     ax_c.set_title("Accuracy")
 
+    plt.tight_layout()
     plt.show()

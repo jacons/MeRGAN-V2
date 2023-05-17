@@ -4,7 +4,7 @@ from torch.nn import Linear, BatchNorm2d, Tanh, Module, Sequential, Embedding, U
 
 
 class Generator(Module):
-    def __init__(self, num_classes: int = 10, embedding_dim: int = 100, img_size: int = 32):
+    def __init__(self, num_classes: int = 10, embedding_dim: int = 100):
         super(Generator, self).__init__()
 
         self.embedding_dim = embedding_dim

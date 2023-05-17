@@ -1,8 +1,8 @@
+import copy
 from typing import Dict
 
-import torch
-from torch import arange, ones, zeros, randint, cat, tensor, stack, concatenate, normal
-from torch.nn import BCELoss, CrossEntropyLoss
+from torch import arange, ones, zeros, randint, cat, tensor, stack, normal, Tensor, no_grad
+from torch.nn import BCELoss, CrossEntropyLoss, MSELoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -18,13 +18,14 @@ class Trainer:
 
         # Retrieve the parameters
         self.device, self.n_epochs = config["device"], config["n_epochs"]
-        self.img_size = config["img_size"]
+        self.img_size, self.embedding_dim = config["img_size"], config["embedding"]
+
         # Create a fixed noise to look how the generator improves
         # the construction of the image during each epoch
         self.eval_noise = normal(0, 1, (config["num_classes"], config["embedding"]), device=self.device)
         self.eval_label = arange(0, config["num_classes"], device=self.device)
 
-        self.eval_progress = []
+        self.eval_progress: list[Tensor] = []
 
         # Define the generator and discriminator if they are not provided
         if generator is None or discriminator is None:
@@ -32,19 +33,17 @@ class Trainer:
             self.generator = Generator(
                 num_classes=config["num_classes"],
                 embedding_dim=config["embedding"],
-                img_size=config["img_size"]
             ).to(self.device)
 
             self.discriminator = Discriminator(
                 classes=config["num_classes"],
-                img_size=config["img_size"]
             ).to(self.device)
 
             self.discriminator.apply(weights_init_normal)
             self.generator.apply(weights_init_normal)
         else:
-            self.generator = generator
-            self.discriminator = discriminator
+            self.generator = generator.to(self.device)
+            self.discriminator = discriminator.to(self.device)
 
         # Loss functions
         self.adversarial_loss = BCELoss().to(self.device)
@@ -53,7 +52,7 @@ class Trainer:
         self.optimizer_g = Adam(self.generator.parameters(), lr=config["lr_g"], betas=(0.5, 0.999))
         self.optimizer_d = Adam(self.discriminator.parameters(), lr=config["lr_d"], betas=(0.5, 0.999))
 
-    def fit_classic(self, experiences, batch_size: int, epch_expr: bool):
+    def fit_classic(self, experiences, batch_size: int, epch_expr: bool) -> Tensor:
 
         device, n_epochs = self.device, self.n_epochs
         history, usable_num = [], None
@@ -70,9 +69,7 @@ class Trainer:
 
                     valid, fake = ones((batch_size, 1), device=device), zeros((batch_size, 1), device=device)
 
-                    # -----------------
-                    #  Train Generator
-                    # -----------------
+                    # ---- Generator ----
                     self.optimizer_g.zero_grad()
 
                     gen_label = usable_num[randint(0, len(usable_num), size=(batch_size,))].to(device)
@@ -86,10 +83,7 @@ class Trainer:
                     errG.backward()
                     self.optimizer_g.step()
 
-                    # ---------------------
-                    #  Train Discriminator
-                    # ---------------------
-
+                    # ---- Discriminator ----
                     self.optimizer_d.zero_grad()
 
                     dis_real, aux_real = self.discriminator(real_image)
@@ -103,8 +97,8 @@ class Trainer:
                     )
 
                     d_acc = compute_acc(
-                        concatenate([aux_real, aux_fake], dim=0),
-                        concatenate([real_label, gen_label], dim=0)
+                        cat([aux_real, aux_fake], dim=0),
+                        cat([real_label, gen_label], dim=0)
                     )
 
                     errD.backward()
@@ -117,18 +111,18 @@ class Trainer:
                          history[-1][2]))
 
                 if epch_expr:  # eval at each epoch
-                    with torch.no_grad():
+                    with no_grad():
                         self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
 
             if not epch_expr:  # eval at each experience
-                with torch.no_grad():
+                with no_grad():
                     self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
 
         self.eval_progress = stack(self.eval_progress).detach().cpu()
 
         return stack(history).T
 
-    def fit_bufferReplay(self, experiences, buff_img: int, batch_size: int = 64):
+    def fit_bufferReplay(self, experiences, buff_img: int, batch_size: int) -> Tensor:
 
         device, n_epochs = self.device, self.n_epochs
         history, usable_num = [], None
@@ -154,9 +148,7 @@ class Trainer:
 
                     valid, fake = ones((batch_size, 1), device=device), zeros((batch_size, 1), device=device)
 
-                    # -----------------
-                    #  Train Generator
-                    # -----------------
+                    # ---- Generator ----
                     self.optimizer_g.zero_grad()
 
                     gen_label = usable_num[randint(0, len(usable_num), size=(batch_size,))].to(device)
@@ -170,10 +162,7 @@ class Trainer:
                     errG.backward()
                     self.optimizer_g.step()
 
-                    # ---------------------
-                    #  Train Discriminator
-                    # ---------------------
-
+                    # ---- Discriminator ----
                     self.optimizer_d.zero_grad()
 
                     dis_real, aux_real = self.discriminator(real_image)
@@ -187,8 +176,8 @@ class Trainer:
                     )
 
                     d_acc = compute_acc(
-                        concatenate([aux_real, aux_fake], dim=0),
-                        concatenate([real_label, gen_label], dim=0)
+                        cat([aux_real, aux_fake], dim=0),
+                        cat([real_label, gen_label], dim=0)
                     )
 
                     errD.backward()
@@ -200,7 +189,87 @@ class Trainer:
                       % (epoch + 1, n_epochs, history[-1][0], history[-1][1],
                          history[-1][2]))
 
-            with torch.no_grad():
+            with no_grad():
+                self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
+
+        self.eval_progress = stack(self.eval_progress).detach().cpu()
+        return stack(history).T
+
+    def fit_replay_alignment(self, experiences, batch_size_: int, lmb_ra: float = 1e-3):
+
+        device, n_epochs = self.device, self.n_epochs
+        history, usable_num = [], None
+
+        prev_gen = None
+        alignment_loss = MSELoss().to(self.device)
+
+        for idx, (classes, x, y) in enumerate(experiences):
+
+            # Number that can be generated, because the model have seen
+            new_classes = tensor(classes)
+            usable_num = new_classes if usable_num is None else cat((usable_num, new_classes))
+            print("Experience -- ", idx + 1, "numbers", usable_num.tolist())
+
+            loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size_)
+            for epoch in arange(0, n_epochs):
+                for real_image, real_label in tqdm(loader):
+                    batch_size = real_image.size(0)
+
+                    valid, fake = ones((batch_size, 1), device=device), zeros((batch_size, 1), device=device)
+
+                    # ---- Generator ----
+                    self.optimizer_g.zero_grad()
+
+                    gen_label = usable_num[randint(0, len(usable_num), size=(batch_size,))].to(device)
+                    fake_img = self.generator(gen_label)
+
+                    dis_output, aux_output = self.discriminator(fake_img)
+
+                    # replay alignment
+                    align_loss = 0
+                    if prev_gen is not None:
+                        z = normal(0, 1, (batch_size_, self.embedding_dim), device=device)
+                        gen_label = usable_num[randint(0, len(usable_num), size=(batch_size_,))].to(device)
+                        align_loss = lmb_ra * alignment_loss(self.generator(gen_label, z),
+                                                             prev_gen(gen_label, z))
+
+                    errG = 0.5 * (
+                            self.adversarial_loss(dis_output, valid) +
+                            self.auxiliary_loss(aux_output, gen_label) +
+                            align_loss)
+
+                    errG.backward()
+                    self.optimizer_g.step()
+
+                    # ---- Discriminator ----
+                    self.optimizer_d.zero_grad()
+
+                    dis_real, aux_real = self.discriminator(real_image)
+                    dis_fake, aux_fake = self.discriminator(fake_img.detach())
+
+                    errD = 0.25 * (
+                            self.adversarial_loss(dis_real, valid) +
+                            self.adversarial_loss(dis_fake, fake) +
+                            self.auxiliary_loss(aux_real, real_label) +
+                            self.auxiliary_loss(aux_fake, gen_label)
+                    )
+
+                    d_acc = compute_acc(
+                        cat([aux_real, aux_fake], dim=0),
+                        cat([real_label, gen_label], dim=0)
+                    )
+
+                    errD.backward()
+                    self.optimizer_d.step()
+
+                    history.append(tensor([errD.item(), errG.item(), d_acc]))
+
+                print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
+                      % (epoch + 1, n_epochs, history[-1][0], history[-1][1],
+                         history[-1][2]))
+
+            prev_gen = copy.deepcopy(self.generator)
+            with no_grad():
                 self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
 
         self.eval_progress = stack(self.eval_progress).detach().cpu()

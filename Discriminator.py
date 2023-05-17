@@ -3,7 +3,7 @@ from torch.nn import Module, Sequential, LeakyReLU, Conv2d, BatchNorm2d, Linear,
 
 
 class Discriminator(Module):
-    def __init__(self, classes: int = 10, img_size: int = 32):
+    def __init__(self, classes: int = 10):
         super(Discriminator, self).__init__()
 
         self.conv_blocks = Sequential(
