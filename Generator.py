@@ -7,10 +7,9 @@ class Generator(Module):
     def __init__(self, num_classes: int = 10, embedding_dim: int = 100, img_size: int = 32):
         super(Generator, self).__init__()
 
-        self.init_size = img_size // 4
         self.embedding_dim = embedding_dim
         self.embedding = Embedding(num_classes, embedding_dim)
-        self.fc = Linear(embedding_dim, 128 * self.init_size ** 2)
+        self.fc = Linear(embedding_dim, 8192)
 
         self.conv_blocks = Sequential(
             BatchNorm2d(128),
@@ -40,5 +39,5 @@ class Generator(Module):
         input_ = mul(self.embedding(labels), z)
 
         out = self.fc(input_)
-        out = out.view(out.size(0), 128, self.init_size, self.init_size)
+        out = out.view(out.size(0), 128, 8, 8)
         return self.conv_blocks(out)

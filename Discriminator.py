@@ -3,10 +3,8 @@ from torch.nn import Module, Sequential, LeakyReLU, Conv2d, BatchNorm2d, Linear,
 
 
 class Discriminator(Module):
-    def __init__(self, classes: int = 10, img_size=32):
+    def __init__(self, classes: int = 10, img_size: int = 32):
         super(Discriminator, self).__init__()
-
-        ds_size = img_size // 2 ** 4
 
         self.conv_blocks = Sequential(
 
@@ -32,11 +30,11 @@ class Discriminator(Module):
 
         # Output layers
         self.discr = Sequential(
-            Linear(128 * ds_size ** 2, 1),
+            Linear(512, 1),
             Sigmoid())
 
         self.classifier = Sequential(
-            Linear(128 * ds_size ** 2, classes),
+            Linear(512, classes),
             Softmax(dim=1))
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:

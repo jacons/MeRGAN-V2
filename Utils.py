@@ -1,10 +1,15 @@
+import os
+import shutil
+
 import torch
 from matplotlib import pyplot as plt
-from torch import Tensor, eq
+from torch import Tensor, eq, arange, full, cat
 from torch.nn.init import normal_, constant_
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize, ToPILImage
+
+from Generator import Generator
 
 
 def weights_init_normal(m):
@@ -39,44 +44,88 @@ class ExperienceDataset(Dataset):
     Custom dataset
     """
 
-    def __init__(self, image: Tensor, target: Tensor):
+    def __init__(self, image: Tensor, target: Tensor, device: str = "cpu"):
         self.image, self.target = image, target
-
-        self.transformations = Compose(
-            [ToPILImage(),
-             Resize((32, 32)),
-             ToTensor(),
-             Normalize([0.5], [0.5])])
+        self.device = device
 
     def __len__(self):
         return self.image.size(0)
 
     def __getitem__(self, idx):
-        return self.transformations(self.image[idx]), self.target[idx]
+        return self.image[idx].to(self.device), self.target[idx].to(self.device)
 
 
-def custom_mnist(experiences: list[list[int]]) -> tuple[Tensor, Tensor, Tensor]:
-    # Downloading the MNIST digits
-    mnist_data = MNIST('../datasets', download=True, train=True)
+def generate_mnist_dataset():
+    if not os.path.exists("../single_digit"):
+        print("Dataset don't found...")
 
-    img_x, img_y = mnist_data.data, mnist_data.targets
+        os.makedirs("../single_digit")
+
+        # Downloading the MNIST digits
+        transformations = Compose(
+            [Resize((32, 32)), ToTensor(), Normalize([0.5], [0.5])])
+        mnist_data = MNIST('temp_mnist', download=True, train=True, transform=transformations)
+
+        print("Preprocessing numbers...")
+        x, y = next(iter(DataLoader(mnist_data, shuffle=False, batch_size=mnist_data.data.size(0))))
+
+        for n in arange(0, 10):
+            print("Saving number:", n.item())
+            idx = torch.where(y == n)[0]
+            torch.save([x[idx], y[idx]], "../single_digit/num_" + str(n.item()) + ".pt")
+
+        shutil.rmtree("temp_mnist")
+    else:
+        print("Dataset found...")
+
+
+def custom_mnist(experiences: list[list[int]]) -> tuple[list, Tensor, Tensor]:
+    generate_mnist_dataset()
 
     for t_ in experiences:
-        ids = []
+        img_x, img_y = None, None
+
         for n in t_:
-            ids.extend(torch.where(mnist_data.targets == n)[0].tolist())
+            num_x, num_y = torch.load("../single_digit/num_" + str(n) + ".pt")
 
-        yield t_, img_x[ids], img_y[ids]
+            img_x = num_x if img_x is None else cat([img_x, num_x])
+            img_y = num_y if img_y is None else cat([img_y, num_y])
+
+        yield t_, img_x, img_y
 
 
-def plot_mnist_eval(source: Tensor, b: int = 2):
+def plot_mnist_eval(source: Tensor):
     epochs, num_classes, img_size = source.size(0), source.size(1), source.size(2)
-    plt.figure(facecolor='white')
-    f, axs = plt.subplots(ncols=num_classes, nrows=epochs, figsize=(7, int(0.7 * epochs)))
-    for e in range(epochs):
-        for c in range(num_classes):
-            bordered = torch.zeros(img_size + b * 2, img_size + b * 2).fill_(0.8)
-            bordered[b:-b, b:-b] = source[e, c]
-            axs[e, c].imshow(bordered)
-            axs[e, c].axis("off")
+
+    if epochs == 1:
+        f, axs = plt.subplots(ncols=num_classes, nrows=epochs, figsize=(7, 1))
+        f.patch.set_facecolor('black')
+
+        for c in arange(num_classes):
+            axs[c].imshow(-source[0, c], cmap="binary")
+            axs[c].axis("off")
+
+    elif epochs > 1:
+        f, axs = plt.subplots(ncols=num_classes, nrows=epochs, figsize=(7, int(0.7 * epochs)))
+        f.patch.set_facecolor('black')
+
+        for e in arange(epochs):
+            for c in arange(num_classes):
+                axs[e, c].imshow(-source[e, c], cmap="binary")
+                axs[e, c].axis("off")
+    plt.show()
+
+
+def generate_classes(g: Generator, num_classes: int, rows: int, device: str):
+    f, axs = plt.subplots(ncols=num_classes, nrows=rows, figsize=(7, int(0.7 * rows)))
+    f.patch.set_facecolor('black')
+
+    labels = arange(0, num_classes, device=device)
+
+    with torch.no_grad():
+        for e in arange(rows):
+            images = g(labels).squeeze().cpu()
+            for c in arange(num_classes):
+                axs[e, c].imshow(-images[c], cmap="binary")
+                axs[e, c].axis("off")
     plt.show()
