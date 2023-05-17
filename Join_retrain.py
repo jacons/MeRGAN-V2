@@ -1,9 +1,9 @@
 import torch
-from torch import Tensor, zeros, full, cat, arange
+from torch import Tensor, zeros, full, cat
 from torch.utils.data import DataLoader
 
 from Generator import Generator
-from Utils import ExperienceDataset, generate_classes
+from Utils import ExperienceDataset
 
 
 class Join_replay:
@@ -37,7 +37,6 @@ class Join_replay:
             gen_buffer = zeros((img_to_create, 1, self.img_size, self.img_size))
 
             with torch.no_grad():
-                generate_classes(self.g, usable_num.size(0), 10, "cuda")
 
                 count = 0
                 for i in usable_num:

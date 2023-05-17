@@ -141,13 +141,13 @@ class Trainer:
 
         for idx, (classes, x, y) in enumerate(experiences):
 
-            new_classes = tensor(classes)
+            loader = jr.create_buffer(idx, usable_num, (x, y))
 
             # Number that can be generated, because the model have seen
+            new_classes = tensor(classes)
             usable_num = new_classes if usable_num is None else cat((usable_num, new_classes))
             print("Experience -- ", idx + 1, "numbers", usable_num.tolist())
 
-            loader = jr.create_buffer(idx, new_classes, (x, y))
             for epoch in arange(0, n_epochs):
                 for real_image, real_label in tqdm(loader):
                     batch_size = real_image.size(0)
