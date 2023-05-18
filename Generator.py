@@ -4,7 +4,7 @@ from torch.nn import Linear, BatchNorm2d, Tanh, Module, Sequential, Embedding, U
 
 
 class Generator(Module):
-    def __init__(self, num_classes: int = 10, embedding_dim: int = 100):
+    def __init__(self, channels: int = 1, num_classes: int = 10, embedding_dim: int = 100):
         super(Generator, self).__init__()
 
         self.embedding_dim = embedding_dim
@@ -24,7 +24,7 @@ class Generator(Module):
             BatchNorm2d(64, 0.8),
             LeakyReLU(0.2, inplace=True),
 
-            Conv2d(64, 1, 3, stride=1, padding=1),
+            Conv2d(64, channels, 3, stride=1, padding=1),
             Tanh(),
         )
 

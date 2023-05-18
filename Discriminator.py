@@ -3,12 +3,12 @@ from torch.nn import Module, Sequential, LeakyReLU, Conv2d, BatchNorm2d, Linear,
 
 
 class Discriminator(Module):
-    def __init__(self, classes: int = 10):
+    def __init__(self, channels: int, classes: int = 10):
         super(Discriminator, self).__init__()
 
         self.conv_blocks = Sequential(
 
-            Conv2d(1, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
+            Conv2d(channels, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
             LeakyReLU(negative_slope=0.2, inplace=True),
             Dropout2d(p=0.25, inplace=False),
 

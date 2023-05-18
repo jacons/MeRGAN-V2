@@ -1,4 +1,5 @@
 import copy
+import os
 from typing import Dict
 
 from torch import arange, ones, zeros, randint, cat, tensor, stack, normal, Tensor, no_grad
@@ -10,6 +11,7 @@ from tqdm import tqdm
 from Discriminator import Discriminator
 from Generator import Generator
 from Join_retrain import Join_replay
+from Plot_functions import save_grid
 from Utils import weights_init_normal, ExperienceDataset, compute_acc
 
 
@@ -19,13 +21,12 @@ class Trainer:
         # Retrieve the parameters
         self.device, self.n_epochs = config["device"], config["n_epochs"]
         self.img_size, self.embedding_dim = config["img_size"], config["embedding"]
+        self.channels = config["channels"]
 
-        # Create a fixed noise to look how the generator improves
-        # the construction of the image during each epoch
-        self.eval_noise = normal(0, 1, (config["num_classes"], config["embedding"]), device=self.device)
-        self.eval_label = arange(0, config["num_classes"], device=self.device)
-
-        self.eval_progress: list[Tensor] = []
+        # n_rows number of rows in the image of progression
+        self.num_classes, self.n_rows = config["num_classes"], 5
+        self.eval_noise = normal(0, 1, (self.n_rows, self.num_classes, self.embedding_dim), device=self.device)
+        self.eval_label = arange(0, self.num_classes).to(self.device)
 
         # Define the generator and discriminator if they are not provided
         if generator is None or discriminator is None:
@@ -33,10 +34,12 @@ class Trainer:
             self.generator = Generator(
                 num_classes=config["num_classes"],
                 embedding_dim=config["embedding"],
+                channels=self.channels
             ).to(self.device)
 
             self.discriminator = Discriminator(
                 classes=config["num_classes"],
+                channels=self.channels,
             ).to(self.device)
 
             self.discriminator.apply(weights_init_normal)
@@ -52,19 +55,22 @@ class Trainer:
         self.optimizer_g = Adam(self.generator.parameters(), lr=config["lr_g"], betas=(0.5, 0.999))
         self.optimizer_d = Adam(self.discriminator.parameters(), lr=config["lr_d"], betas=(0.5, 0.999))
 
-    def fit_classic(self, experiences, batch_size: int, epch_expr: bool) -> Tensor:
+    def fit_classic(self, experiences, batch_size: int, folder: str = "classical_acgan") -> Tensor:
+        os.makedirs(folder, exist_ok=True)
 
         device, n_epochs = self.device, self.n_epochs
-        history, usable_num = [], None
+        history, current_classes = [], None
+
+        const_gen, const_dis = 0.5, 0.25
 
         for idx, (numbers, x, y) in enumerate(experiences):
             # Number that can be generated, because the model have seen
-            usable_num = tensor(numbers) if usable_num is None else cat((usable_num, tensor(numbers)))
-            print("Experience -- ", idx + 1, "numbers", usable_num.tolist())
+            current_classes = tensor(numbers) if current_classes is None else cat((current_classes, tensor(numbers)))
+            print("Experience -- ", idx + 1, "numbers", current_classes.tolist())
 
             loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size)
             for epoch in arange(0, n_epochs):
-                for real_image, real_label in tqdm(loader):
+                for batch, (real_image, real_label) in enumerate(tqdm(loader)):
                     batch_size = real_image.size(0)
 
                     valid, fake = ones((batch_size, 1), device=device), zeros((batch_size, 1), device=device)
@@ -72,11 +78,11 @@ class Trainer:
                     # ---- Generator ----
                     self.optimizer_g.zero_grad()
 
-                    gen_label = usable_num[randint(0, len(usable_num), size=(batch_size,))].to(device)
+                    gen_label = current_classes[randint(0, len(current_classes), size=(batch_size,))].to(device)
                     fake_img = self.generator(gen_label)
 
                     dis_output, aux_output = self.discriminator(fake_img)
-                    errG = 0.5 * (
+                    errG = const_gen * (
                             self.adversarial_loss(dis_output, valid) +
                             self.auxiliary_loss(aux_output, gen_label))
 
@@ -89,7 +95,7 @@ class Trainer:
                     dis_real, aux_real = self.discriminator(real_image)
                     dis_fake, aux_fake = self.discriminator(fake_img.detach())
 
-                    errD = 0.25 * (
+                    errD = const_dis * (
                             self.adversarial_loss(dis_real, valid) +
                             self.adversarial_loss(dis_fake, fake) +
                             self.auxiliary_loss(aux_real, real_label) +
@@ -106,44 +112,41 @@ class Trainer:
 
                     history.append(tensor([errD.item(), errG.item(), d_acc]))
 
+                    if batch % 100 == 0:
+                        self.save_progress(f"{folder}/img_{idx}_{epoch}_{batch}.png")
+
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
                       % (epoch + 1, n_epochs, history[-1][0], history[-1][1],
                          history[-1][2]))
 
-                if epch_expr:  # eval at each epoch
-                    with no_grad():
-                        self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
-
-            if not epch_expr:  # eval at each experience
-                with no_grad():
-                    self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
-
-        self.eval_progress = stack(self.eval_progress).detach().cpu()
-
         return stack(history).T
 
-    def fit_bufferReplay(self, experiences, buff_img: int, batch_size: int) -> Tensor:
+    def fit_join_retrain(self, experiences, buff_img: int, batch_size: int, folder: str = "join_retrain") -> Tensor:
+        os.makedirs(folder, exist_ok=True)
 
         device, n_epochs = self.device, self.n_epochs
-        history, usable_num = [], None
+        history, current_classes = [], None
+
+        const_gen, const_dis = 0.5, 0.25
 
         jr = Join_replay(generator=self.generator,
                          batch_size=batch_size,
                          buff_img=buff_img,
                          img_size=self.img_size,
+                         channels=self.channels,
                          device=device)
 
         for idx, (classes, x, y) in enumerate(experiences):
 
-            loader = jr.create_buffer(idx, usable_num, (x, y))
+            loader = jr.create_buffer(idx, current_classes, (x, y))
 
             # Number that can be generated, because the model have seen
             new_classes = tensor(classes)
-            usable_num = new_classes if usable_num is None else cat((usable_num, new_classes))
-            print("Experience -- ", idx + 1, "numbers", usable_num.tolist())
+            current_classes = new_classes if current_classes is None else cat((current_classes, new_classes))
+            print("Experience -- ", idx + 1, "numbers", current_classes.tolist())
 
             for epoch in arange(0, n_epochs):
-                for real_image, real_label in tqdm(loader):
+                for batch, (real_image, real_label) in enumerate(tqdm(loader)):
                     batch_size = real_image.size(0)
 
                     valid, fake = ones((batch_size, 1), device=device), zeros((batch_size, 1), device=device)
@@ -151,11 +154,11 @@ class Trainer:
                     # ---- Generator ----
                     self.optimizer_g.zero_grad()
 
-                    gen_label = usable_num[randint(0, len(usable_num), size=(batch_size,))].to(device)
+                    gen_label = current_classes[randint(0, len(current_classes), size=(batch_size,))].to(device)
                     fake_img = self.generator(gen_label)
 
                     dis_output, aux_output = self.discriminator(fake_img)
-                    errG = 0.5 * (
+                    errG = const_gen * (
                             self.adversarial_loss(dis_output, valid) +
                             self.auxiliary_loss(aux_output, gen_label))
 
@@ -168,7 +171,7 @@ class Trainer:
                     dis_real, aux_real = self.discriminator(real_image)
                     dis_fake, aux_fake = self.discriminator(fake_img.detach())
 
-                    errD = 0.25 * (
+                    errD = const_dis * (
                             self.adversarial_loss(dis_real, valid) +
                             self.adversarial_loss(dis_fake, fake) +
                             self.auxiliary_loss(aux_real, real_label) +
@@ -185,34 +188,36 @@ class Trainer:
 
                     history.append(tensor([errD.item(), errG.item(), d_acc]))
 
+                    if batch % 100 == 0:
+                        self.save_progress(f"{folder}/img_{idx}_{epoch}_{batch}.png")
+
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
                       % (epoch + 1, n_epochs, history[-1][0], history[-1][1],
                          history[-1][2]))
 
-            with no_grad():
-                self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
-
-        self.eval_progress = stack(self.eval_progress).detach().cpu()
         return stack(history).T
 
-    def fit_replay_alignment(self, experiences, batch_size_: int, lmb_ra: float = 1e-3):
+    def fit_replay_alignment(self, experiences, batch_size_: int, folder: str = "replay_alignment"):
+        os.makedirs(folder, exist_ok=True)
 
         device, n_epochs = self.device, self.n_epochs
-        history, usable_num = [], None
+        history, current_classes = [], None
 
-        prev_gen = None
+        const_gen, const_dis, const_ra = 0.5, 0.25, 1
+
+        prev_gen, prev_classes = None, None
         alignment_loss = MSELoss().to(self.device)
 
         for idx, (classes, x, y) in enumerate(experiences):
 
-            # Number that can be generated, because the model have seen
-            new_classes = tensor(classes)
-            usable_num = new_classes if usable_num is None else cat((usable_num, new_classes))
-            print("Experience -- ", idx + 1, "numbers", usable_num.tolist())
+            prev_classes = copy.deepcopy(current_classes)
+            current_classes = tensor(classes)  # Number that can be generated
+
+            print("Experience -- ", idx + 1, "numbers", current_classes.tolist())
 
             loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size_)
             for epoch in arange(0, n_epochs):
-                for real_image, real_label in tqdm(loader):
+                for batch, (real_image, real_label) in enumerate(tqdm(loader)):
                     batch_size = real_image.size(0)
 
                     valid, fake = ones((batch_size, 1), device=device), zeros((batch_size, 1), device=device)
@@ -220,7 +225,7 @@ class Trainer:
                     # ---- Generator ----
                     self.optimizer_g.zero_grad()
 
-                    gen_label = usable_num[randint(0, len(usable_num), size=(batch_size,))].to(device)
+                    gen_label = current_classes[randint(0, len(current_classes), size=(batch_size,))].to(device)
                     fake_img = self.generator(gen_label)
 
                     dis_output, aux_output = self.discriminator(fake_img)
@@ -229,14 +234,18 @@ class Trainer:
                     align_loss = 0
                     if prev_gen is not None:
                         z = normal(0, 1, (batch_size_, self.embedding_dim), device=device)
-                        gen_label = usable_num[randint(0, len(usable_num), size=(batch_size_,))].to(device)
-                        align_loss = lmb_ra * alignment_loss(self.generator(gen_label, z),
-                                                             prev_gen(gen_label, z))
+                        gen_label_ = prev_classes[randint(0, len(prev_classes), size=(batch_size_,))].to(device)
 
-                    errG = 0.5 * (
+                        fake_img1 = self.generator(gen_label_, z)
+                        with no_grad():
+                            fake_img2 = prev_gen(gen_label_, z)
+
+                        align_loss = alignment_loss(fake_img1, fake_img2)
+
+                    errG = const_gen * (
                             self.adversarial_loss(dis_output, valid) +
-                            self.auxiliary_loss(aux_output, gen_label) +
-                            align_loss)
+                            self.auxiliary_loss(aux_output, gen_label)
+                    ) + const_ra * align_loss
 
                     errG.backward()
                     self.optimizer_g.step()
@@ -247,7 +256,7 @@ class Trainer:
                     dis_real, aux_real = self.discriminator(real_image)
                     dis_fake, aux_fake = self.discriminator(fake_img.detach())
 
-                    errD = 0.25 * (
+                    errD = const_dis * (
                             self.adversarial_loss(dis_real, valid) +
                             self.adversarial_loss(dis_fake, fake) +
                             self.auxiliary_loss(aux_real, real_label) +
@@ -264,13 +273,20 @@ class Trainer:
 
                     history.append(tensor([errD.item(), errG.item(), d_acc]))
 
+                    if batch % 100 == 0:
+                        self.save_progress(f"{folder}/img_{idx}_{epoch}_{batch}.png")
+
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
                       % (epoch + 1, n_epochs, history[-1][0], history[-1][1],
                          history[-1][2]))
 
             prev_gen = copy.deepcopy(self.generator)
-            with no_grad():
-                self.eval_progress.append(self.generator(self.eval_label, self.eval_noise).squeeze())
 
-        self.eval_progress = stack(self.eval_progress).detach().cpu()
         return stack(history).T
+
+    def save_progress(self, id_img: str):
+        img = zeros((self.n_rows, self.num_classes, self.channels, self.img_size, self.img_size))
+        with no_grad():
+            for i in range(self.n_rows):
+                img[i].copy_(self.generator(self.eval_label, self.eval_noise[i]))
+        save_grid(img, self.n_rows, id_img)

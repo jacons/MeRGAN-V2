@@ -6,7 +6,7 @@ from Utils import ExperienceDataset
 
 
 class Join_replay:
-    def __init__(self, generator: Generator, batch_size: int, buff_img: int,
+    def __init__(self, generator: Generator, batch_size: int, buff_img: int, channels: int,
                  img_size: int, device: str = "cpu"):
 
         self.g = generator
@@ -14,6 +14,7 @@ class Join_replay:
         self.batch_size = batch_size
         self.buff_img = buff_img
         self.device = device
+        self.channels = channels
 
     def create_buffer(self, id_exp: int, usable_num: Tensor,
                       source: tuple[Tensor, Tensor]) -> DataLoader:
@@ -30,7 +31,7 @@ class Join_replay:
 
             # Define the number of images to generate
             img_to_create = self.buff_img * usable_num.size(0)
-            gen_buffer = zeros((img_to_create, 1, self.img_size, self.img_size))
+            gen_buffer = zeros((img_to_create, self.channels, self.img_size, self.img_size))
 
             with no_grad():
                 count = 0
