@@ -34,7 +34,7 @@ def weights_init_normal(m):
 
 def compute_acc(predicted: Tensor, labels: Tensor):
     """
-    Compute the accuracy of model
+    Compute the accuracy of model both for real and fake images
     :param predicted: label predicted by discriminator
     :param labels:  true label
     :return:
@@ -52,10 +52,12 @@ def generate_mnist_dataset(dataset_path: str, temp_path: str = "temp_mnist"):
         transformations = Compose([Resize((32, 32)), ToTensor(), Normalize([0.5], [0.5])])
         mnist_data = MNIST(temp_path, download=True, train=True, transform=transformations)
 
+        # a straightforward trick to apply all the transformation
         print("Preprocessing numbers...")
         dataloader = DataLoader(mnist_data, shuffle=False, batch_size=mnist_data.data.size(0))
         x, y = next(iter(dataloader))
 
+        # we save all preprocessed digits into separate files
         for n in range(10):
             print("Saving number:", n)
             idx = torch.where(y == n)[0]
@@ -67,12 +69,14 @@ def generate_mnist_dataset(dataset_path: str, temp_path: str = "temp_mnist"):
 
 
 def custom_mnist(experiences: list[list[int]], dataset_path: str = "../single_digit") -> tuple[list, Tensor, Tensor]:
+
+    # check if the dataset is ready
     generate_mnist_dataset(dataset_path)
 
-    for t_ in experiences:
+    for t_ in experiences:  # iterate each experience
         img_x, img_y = None, None
 
-        for n in t_:
+        for n in t_:  # for each experience concatenate the numbers
             num_x, num_y = torch.load(f"{dataset_path}/num_{n}.pt")
 
             img_x = num_x if img_x is None else cat([img_x, num_x])

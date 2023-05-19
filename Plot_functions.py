@@ -3,31 +3,11 @@ from torch import Tensor, arange, no_grad
 
 from Generator import Generator
 
-"""
-def plot_mnist_eval(source: Tensor):
-    epochs, num_classes, img_size = source.size(0), source.size(1), source.size(2)
-
-    f, axs = plt.subplots(ncols=num_classes, nrows=epochs, figsize=(7, max(int(0.7 * epochs), 1)))
-    f.patch.set_facecolor('black')
-
-    if epochs == 1:
-        for c in range(num_classes):
-            axs[c].imshow(-source[0, c], cmap="binary")
-            axs[c].axis("off")
-
-    elif epochs > 1:
-        for e in range(epochs):
-            y_offset = (axs[e, 0].get_position().y0 - axs[e, 0].get_position().y1) / 2 + axs[e, 0].get_position().y1
-            f.text(0.006, y_offset, "Epochs = " + str(e + 1), fontsize=10, color="white")
-
-            for c in range(num_classes):
-                axs[e, c].imshow(-source[e, c], cmap="binary")
-                axs[e, c].axis("off")
-    plt.show()
-"""
-
 
 def generate_classes(g: Generator, num_classes: int, rows: int, device: str):
+    """
+    Generate an example of images with different noise as input
+    """
     rows = max(rows, 2)
 
     f, axs = plt.subplots(ncols=num_classes, nrows=rows, figsize=(7, int(0.7 * rows)))
@@ -56,6 +36,9 @@ def generate_classes(g: Generator, num_classes: int, rows: int, device: str):
 
 
 def save_grid(images: Tensor, rows: int, name_file: str, num_classes: int = 10):
+    """
+    Create and save a grid of numbers for the gif
+    """
     f, axs = plt.subplots(ncols=num_classes, nrows=rows, figsize=(7, int(0.7 * rows)))
     f.patch.set_facecolor('black')
 
