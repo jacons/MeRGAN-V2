@@ -46,7 +46,7 @@ def generate_classes(g: Generator, num_classes: int, rows: int, device: str):
             images = g(labels).cpu()
             for c in range(num_classes):
 
-                if images.size(2) == 1:
+                if images.size(1) == 1:
                     axs[e, c].imshow(-images[c, 0], cmap="binary")
                 else:
                     axs[e, c].imshow(-images[c])
@@ -69,16 +69,17 @@ def save_grid(images: Tensor, rows: int, name_file: str, num_classes: int = 10):
 
         for c in range(num_classes):
             if images.size(2) == 1:
-                axs[e, c].imshow(-images[c, 0], cmap="binary")
+                axs[e, c].imshow(-images[e, c, 0], cmap="binary")
             else:
-                axs[e, c].imshow(-images[c])
+                axs[e, c].imshow(-images[e, c])
             axs[e, c].axis("off")
 
-    plt.savefig(name_file)
+    plt.savefig(name_file, bbox_inches='tight')
+    plt.close(f)
 
 
 def plot_history(history: Tensor):
-    fig = plt.figure(figsize=(20, 12))
+    fig = plt.figure(figsize=(25, 14))
     sub_figs = fig.subfigures(1, 2)
 
     ax_img = sub_figs[0].subplots(nrows=2)
@@ -104,5 +105,5 @@ def plot_history(history: Tensor):
     ax_c.set_ylabel("Accuracy")
     ax_c.set_title("Accuracy")
 
-    plt.tight_layout()
+    plt.tight_layout(pad=6)
     plt.show()

@@ -21,7 +21,7 @@ class Trainer:
         # Retrieve the parameters
         self.device, self.n_epochs = config["device"], config["n_epochs"]
         self.img_size, self.embedding_dim = config["img_size"], config["embedding"]
-        self.channels = config["channels"]
+        self.channels, self.batch_size = config["channels"], config["batch_size"]
 
         # n_rows number of rows in the image of progression
         self.num_classes, self.n_rows = config["num_classes"], 5
@@ -55,25 +55,30 @@ class Trainer:
         self.optimizer_g = Adam(self.generator.parameters(), lr=config["lr_g"], betas=(0.5, 0.999))
         self.optimizer_d = Adam(self.discriminator.parameters(), lr=config["lr_d"], betas=(0.5, 0.999))
 
-    def fit_classic(self, experiences, batch_size: int, folder: str = "classical_acgan") -> Tensor:
-        os.makedirs(folder, exist_ok=True)
+    def fit_classic(self, experiences, create_gif: bool = False,
+                    folder: str = "classical_acgan") -> Tensor:
 
-        device, n_epochs = self.device, self.n_epochs
+        if create_gif:
+            os.makedirs(folder, exist_ok=True)
+
+        device, n_epochs, batch_size_ = self.device, self.n_epochs, self.batch_size
         history, current_classes = [], None
 
         const_gen, const_dis = 0.5, 0.25
 
         for idx, (numbers, x, y) in enumerate(experiences):
+
             # Number that can be generated, because the model have seen
-            current_classes = tensor(numbers) if current_classes is None else cat((current_classes, tensor(numbers)))
+            current_classes = tensor(numbers)
             print("Experience -- ", idx + 1, "numbers", current_classes.tolist())
 
-            loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size)
+            loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size_)
             for epoch in arange(0, n_epochs):
                 for batch, (real_image, real_label) in enumerate(tqdm(loader)):
                     batch_size = real_image.size(0)
 
-                    valid, fake = ones((batch_size, 1), device=device), zeros((batch_size, 1), device=device)
+                    valid = ones((batch_size, 1), device=device)
+                    fake = zeros((batch_size, 1), device=device)
 
                     # ---- Generator ----
                     self.optimizer_g.zero_grad()
@@ -112,7 +117,7 @@ class Trainer:
 
                     history.append(tensor([errD.item(), errG.item(), d_acc]))
 
-                    if batch % 100 == 0:
+                    if create_gif and batch % 100 == 0:
                         self.save_progress(f"{folder}/img_{idx}_{epoch}_{batch}.png")
 
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
@@ -121,8 +126,11 @@ class Trainer:
 
         return stack(history).T
 
-    def fit_join_retrain(self, experiences, buff_img: int, batch_size: int, folder: str = "join_retrain") -> Tensor:
-        os.makedirs(folder, exist_ok=True)
+    def fit_join_retrain(self, experiences, buff_img: int, create_gif: bool = False,
+                         folder: str = "join_retrain") -> Tensor:
+
+        if create_gif:
+            os.makedirs(folder, exist_ok=True)
 
         device, n_epochs = self.device, self.n_epochs
         history, current_classes = [], None
@@ -130,7 +138,7 @@ class Trainer:
         const_gen, const_dis = 0.5, 0.25
 
         jr = Join_replay(generator=self.generator,
-                         batch_size=batch_size,
+                         batch_size=self.batch_size,
                          buff_img=buff_img,
                          img_size=self.img_size,
                          channels=self.channels,
@@ -188,7 +196,7 @@ class Trainer:
 
                     history.append(tensor([errD.item(), errG.item(), d_acc]))
 
-                    if batch % 100 == 0:
+                    if create_gif and batch % 100 == 0:
                         self.save_progress(f"{folder}/img_{idx}_{epoch}_{batch}.png")
 
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
@@ -197,10 +205,12 @@ class Trainer:
 
         return stack(history).T
 
-    def fit_replay_alignment(self, experiences, batch_size_: int, folder: str = "replay_alignment"):
-        os.makedirs(folder, exist_ok=True)
+    def fit_replay_alignment(self, experiences, create_gif: bool = False,
+                             folder: str = "replay_alignment"):
+        if create_gif:
+            os.makedirs(folder, exist_ok=True)
 
-        device, n_epochs = self.device, self.n_epochs
+        device, n_epochs, batch_size_ = self.device, self.n_epochs, self.batch_size
         history, current_classes = [], None
 
         const_gen, const_dis, const_ra = 0.5, 0.25, 1
@@ -210,10 +220,16 @@ class Trainer:
 
         for idx, (classes, x, y) in enumerate(experiences):
 
-            prev_classes = copy.deepcopy(current_classes)
+            if idx > 0 and prev_classes is None:
+                prev_classes = current_classes
+            elif prev_classes is not None and idx > 0:
+                prev_classes = cat((prev_classes, current_classes))
+
             current_classes = tensor(classes)  # Number that can be generated
 
             print("Experience -- ", idx + 1, "numbers", current_classes.tolist())
+            if prev_classes is not None:
+                print("Past experiences", prev_classes.tolist())
 
             loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size_)
             for epoch in arange(0, n_epochs):
@@ -273,7 +289,7 @@ class Trainer:
 
                     history.append(tensor([errD.item(), errG.item(), d_acc]))
 
-                    if batch % 100 == 0:
+                    if create_gif and batch % 100 == 0:
                         self.save_progress(f"{folder}/img_{idx}_{epoch}_{batch}.png")
 
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
