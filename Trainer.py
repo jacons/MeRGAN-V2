@@ -72,7 +72,7 @@ class Trainer:
             print("-- Experience -- ", idx + 1, "classes", current_classes.tolist())
 
             loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size_)
-            for epoch in n_epochs[idx]:
+            for epoch in range(0, n_epochs[idx]):
                 for batch, (real_image, real_label) in enumerate(tqdm(loader)):
                     batch_size = real_image.size(0)
 
@@ -160,7 +160,7 @@ class Trainer:
             current_classes = new_classes if current_classes is None else cat((current_classes, new_classes))
             print("-- Experience -- ", idx + 1, "numbers", current_classes.tolist())
 
-            for epoch in n_epochs[idx]:
+            for epoch in range(0, n_epochs[idx]):
                 for real_image, real_label in tqdm(loader):
                     batch_size = real_image.size(0)
 
@@ -243,7 +243,7 @@ class Trainer:
                 print("Past experiences", prev_classes.tolist())
 
             loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size_)
-            for epoch in n_epochs[idx]:
+            for epoch in range(0, n_epochs[idx]):
                 for real_image, real_label in tqdm(loader):
                     batch_size = real_image.size(0)
 
