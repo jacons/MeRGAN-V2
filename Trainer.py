@@ -72,7 +72,7 @@ class Trainer:
             print("-- Experience -- ", idx + 1, "classes", current_classes.tolist())
 
             loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size_)
-            for epoch in arange(0, n_epochs):
+            for epoch in n_epochs[idx]:
                 for batch, (real_image, real_label) in enumerate(tqdm(loader)):
                     batch_size = real_image.size(0)
 
@@ -120,7 +120,7 @@ class Trainer:
                         self.save_progress(f"{folder}/img_{idx}_{epoch}_{batch}.png")
 
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
-                      % (epoch + 1, n_epochs, loss_history[-1][0], loss_history[-1][1],
+                      % (epoch + 1, n_epochs[idx], loss_history[-1][0], loss_history[-1][1],
                          loss_history[-1][2]))
 
         return stack(loss_history).T
@@ -160,7 +160,7 @@ class Trainer:
             current_classes = new_classes if current_classes is None else cat((current_classes, new_classes))
             print("-- Experience -- ", idx + 1, "numbers", current_classes.tolist())
 
-            for epoch in arange(0, n_epochs):
+            for epoch in n_epochs[idx]:
                 for real_image, real_label in tqdm(loader):
                     batch_size = real_image.size(0)
 
@@ -207,7 +207,7 @@ class Trainer:
                     self.save_progress(f"{folder}/img_{idx}_{epoch}.png")
 
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
-                      % (epoch + 1, n_epochs, loss_history[-1][0], loss_history[-1][1],
+                      % (epoch + 1, n_epochs[idx], loss_history[-1][0], loss_history[-1][1],
                          loss_history[-1][2]))
 
         return stack(loss_history).T
@@ -243,7 +243,7 @@ class Trainer:
                 print("Past experiences", prev_classes.tolist())
 
             loader = DataLoader(ExperienceDataset(x, y, device), shuffle=True, batch_size=batch_size_)
-            for epoch in arange(0, n_epochs):
+            for epoch in n_epochs[idx]:
                 for real_image, real_label in tqdm(loader):
                     batch_size = real_image.size(0)
 
@@ -305,7 +305,7 @@ class Trainer:
                     self.save_progress(f"{folder}/img_{idx}_{epoch}.png")
 
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
-                      % (epoch + 1, n_epochs, history[-1][0], history[-1][1],
+                      % (epoch + 1, n_epochs[idx], history[-1][0], history[-1][1],
                          history[-1][2]))
 
             prev_gen = copy.deepcopy(self.generator)
