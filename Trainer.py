@@ -22,7 +22,7 @@ class Trainer:
         self.device, self.n_epochs = config["device"], config["n_epochs"]
         self.img_size, self.embedding_dim = config["img_size"], config["embedding"]
         self.channels, self.batch_size = config["channels"], config["batch_size"]
-        self.num_classes, = config["num_classes"]
+        self.num_classes = config["num_classes"]
 
         self.n_rows = 5  # n_rows number of rows in the image of progression
 
@@ -301,7 +301,7 @@ class Trainer:
 
                     history.append(tensor([errD.item(), errG.item(), d_acc]))
 
-                if create_gif :
+                if create_gif:
                     self.save_progress(f"{folder}/img_{idx}_{epoch}.png")
 
                 print("[%d/%d] Loss_D: %.4f Loss_G: %.4f Acc %.6f"
