@@ -36,6 +36,7 @@ class Join_retrain:
             img_to_create = self.buff_img * past_classes.size(0)
             gen_buffer = zeros((img_to_create, self.channels, self.img_size, self.img_size))
 
+            self.g.eval()
             with no_grad():
                 count = 0
                 for i in past_classes:  # for each class encountered
@@ -49,6 +50,7 @@ class Join_retrain:
 
                         count += batch_size
                         to_generate -= batch_size
+            self.g.train()
 
             # In the end, we concat the replay generated and the current batch of image (new classes)
             custom_x = cat((real_image, gen_buffer), dim=0)

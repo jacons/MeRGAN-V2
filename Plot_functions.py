@@ -18,6 +18,7 @@ def generate_classes(g: Generator, num_classes: int, rows: int, device: str):
         x_offset = (axs[0, c].get_position().x0 - axs[0, c].get_position().x1) / 2 + axs[0, c].get_position().x1
         f.text(x_offset - 0.025, 0.92, "t = " + str(c), fontsize=10, color="white")
 
+    g.eval()
     with no_grad():
         for e in range(rows):
             y_offset = (axs[e, 0].get_position().y0 - axs[e, 0].get_position().y1) / 2 + axs[e, 0].get_position().y1
@@ -33,32 +34,7 @@ def generate_classes(g: Generator, num_classes: int, rows: int, device: str):
 
                 axs[e, c].axis("off")
     plt.show()
-
-
-def save_grid(images: Tensor, rows: int, name_file: str, num_classes: int = 10):
-    """
-    Create and save a grid of numbers for the gif
-    """
-    f, axs = plt.subplots(ncols=num_classes, nrows=rows, figsize=(7, int(0.7 * rows)))
-    f.patch.set_facecolor('black')
-
-    for c in range(num_classes):
-        x_offset = (axs[0, c].get_position().x0 - axs[0, c].get_position().x1) / 2 + axs[0, c].get_position().x1
-        f.text(x_offset - 0.025, 0.92, "t = " + str(c), fontsize=10, color="white")
-
-    for e in range(rows):
-        y_offset = (axs[e, 0].get_position().y0 - axs[e, 0].get_position().y1) / 2 + axs[e, 0].get_position().y1
-        f.text(0.006, y_offset, "Gen = " + str(e + 1), fontsize=10, color="white")
-
-        for c in range(num_classes):
-            if images.size(2) == 1:
-                axs[e, c].imshow(-images[e, c, 0], cmap="binary")
-            else:
-                axs[e, c].imshow(-images[e, c])
-            axs[e, c].axis("off")
-
-    plt.savefig(name_file, bbox_inches='tight')
-    plt.close(f)
+    g.train()
 
 
 def plot_history(history: Tensor):

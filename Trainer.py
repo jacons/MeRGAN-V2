@@ -6,12 +6,12 @@ from torch import arange, ones, zeros, randint, cat, tensor, stack, normal, Tens
 from torch.nn import BCELoss, CrossEntropyLoss, MSELoss
 from torch.optim import Adam
 from torch.utils.data import DataLoader
+from torchvision.utils import make_grid, save_image
 from tqdm import tqdm
 
 from Discriminator import Discriminator
 from Generator import Generator
 from Join_retrain import Join_retrain
-from Plot_functions import save_grid
 from Utils import weights_init_normal, ExperienceDataset, compute_acc
 
 
@@ -24,11 +24,9 @@ class Trainer:
         self.channels, self.batch_size = config["channels"], config["batch_size"]
         self.num_classes = config["num_classes"]
 
-        self.n_rows = 5  # n_rows number of rows in the image of progression
-
         # Set variables for continual evaluation: fixed noise and labels
-        self.eval_noise = normal(0, 1, (self.n_rows, self.num_classes, self.embedding_dim), device=self.device)
-        self.eval_label = arange(0, self.num_classes).to(self.device)
+        self.eval_noise = normal(0, 1, (100, self.embedding_dim), device=self.device)
+        self.eval_label = arange(0, self.num_classes).repeat(10).to(self.device)
 
         # Define the generator and discriminator if they are not provided
         if generator is None or discriminator is None:
@@ -92,6 +90,7 @@ class Trainer:
 
                     errG.backward()
                     self.optimizer_g.step()
+                    # ---- Generator ----
 
                     # ---- Discriminator ----
                     self.optimizer_d.zero_grad()
@@ -106,13 +105,14 @@ class Trainer:
                             self.auxiliary_loss(aux_fake, gen_label)
                     )
 
+                    errD.backward()
+                    self.optimizer_d.step()
+                    # ---- Discriminator ----
+
                     d_acc = compute_acc(
                         cat([aux_real, aux_fake], dim=0),
                         cat([real_label, gen_label], dim=0)
                     )
-
-                    errD.backward()
-                    self.optimizer_d.step()
 
                     loss_history.append(tensor([errD.item(), errG.item(), d_acc]))
 
@@ -179,6 +179,7 @@ class Trainer:
 
                     errG.backward()
                     self.optimizer_g.step()
+                    # ---- Generator ----
 
                     # ---- Discriminator ----
                     self.optimizer_d.zero_grad()
@@ -193,13 +194,14 @@ class Trainer:
                             self.auxiliary_loss(aux_fake, gen_label)
                     )
 
+                    errD.backward()
+                    self.optimizer_d.step()
+                    # ---- Discriminator ----
+
                     d_acc = compute_acc(
                         cat([aux_real, aux_fake], dim=0),
                         cat([real_label, gen_label], dim=0)
                     )
-
-                    errD.backward()
-                    self.optimizer_d.step()
 
                     loss_history.append(tensor([errD.item(), errG.item(), d_acc]))
 
@@ -277,6 +279,7 @@ class Trainer:
 
                     errG.backward()
                     self.optimizer_g.step()
+                    # ---- Generator ----
 
                     # ---- Discriminator ----
                     self.optimizer_d.zero_grad()
@@ -290,15 +293,14 @@ class Trainer:
                             self.auxiliary_loss(aux_real, real_label) +
                             self.auxiliary_loss(aux_fake, gen_label)
                     )
+                    errD.backward()
+                    self.optimizer_d.step()
+                    # ---- Discriminator ----
 
                     d_acc = compute_acc(
                         cat([aux_real, aux_fake], dim=0),
                         cat([real_label, gen_label], dim=0)
                     )
-
-                    errD.backward()
-                    self.optimizer_d.step()
-
                     history.append(tensor([errD.item(), errG.item(), d_acc]))
 
                 if create_gif:
@@ -309,13 +311,15 @@ class Trainer:
                          history[-1][2]))
 
             prev_gen = copy.deepcopy(self.generator)
+            prev_gen.eval()
 
         return stack(history).T
 
     def save_progress(self, id_img: str):
-        img = zeros((self.n_rows, self.num_classes, self.channels, self.img_size, self.img_size))
+        self.generator.eval()
         with no_grad():
-            for i in range(self.n_rows):
-                img[i].copy_(self.generator(self.eval_label, self.eval_noise[i]))
-        save_grid(img, self.n_rows, id_img)
-        del img
+            img = self.generator(self.eval_label, self.eval_noise)
+        self.generator.train()
+
+        img = make_grid(img, nrow=10, normalize=True)
+        save_image(img, id_img, normalize=False)
