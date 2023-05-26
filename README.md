@@ -44,14 +44,14 @@ the original papaer.
 
 We tried different configurations of hyperparameter in order to choose the best ones. In particular:
 
-|       	       |          	           | 	                                                                                                             | 	  |
-|:-------------:|:--------------------:|---------------------------------------------------------------------------------------------------------------|----|
-| num_classes 	 |     10         	     | 	                                                                                                             | 	  |
-|  img_size  	  |     32         	     | 	                                                                                                             | 	  |
-|  channels  	  |     1         	      | 	                                                                                                             | 	  |
-|  n_epochs  	  |  30/50/**100**   	   | Under 30 there was under-fitting, and with 100 we obtained good results                                     	 | 	  |
-| batch_size 	  |   **32**/64     	    | The original paper suggests 64, but with some experiments 32 seems more suitable                            	 | 	  |
-| embeddings 	  |  **100**/150/200  	  | The results were very similarity, we think that is not so much crucial for this kind of purpose             	 | 	  |
-|   lr     	    | **7e-5**/1e-4/1e-3 	 | (Also in this way the original paper suggests 1e-4 but since we've shrunk the batch_size, we reduced the lr 	 | 	  |
+| Hyperparameters 	 | Values             	 | Description                                                                                                 	 |
+|-------------------|----------------------|---------------------------------------------------------------------------------------------------------------|
+| num_classes   	   | 10         	         | 	                                                                                                             |
+| img_size    	     | 32         	         | 	                                                                                                             |
+| channels    	     | 1         	          | 	                                                                                                             |
+| n_epochs    	     | 30/50/**100**   	    | Under 30 there was under-fitting, and with 100 we obtained good results                   	                   |
+| batch_size   	    | **32**/64     	      | The original paper suggests 64, but with some experiments 32 seems more suitable              	               |
+| embeddings   	    | **100**/150/200  	   | The results were very similarity, we think that is not so much crucial for this kind of purpose       	       |
+| lr       	        | **7e-5**/1e-4/1e-3 	 | (Also in this way the original paper suggests 1e-4 but since we've shrunk the batch_size, we reduced the lr 	 |
 
 ### 4) Conclusion

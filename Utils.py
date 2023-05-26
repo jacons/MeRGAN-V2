@@ -68,8 +68,8 @@ def generate_mnist_dataset(dataset_path: str, temp_path: str = "temp_mnist"):
         print("Dataset found...")
 
 
-def custom_mnist(experiences: list[list[int]], dataset_path: str = "../single_digit") -> tuple[list, Tensor, Tensor]:
-
+def custom_mnist(experiences: list[list[int]], max_sampling: int = -1,
+                 dataset_path: str = "../single_digit") -> tuple[list, Tensor, Tensor]:
     # check if the dataset is ready
     generate_mnist_dataset(dataset_path)
 
@@ -78,6 +78,9 @@ def custom_mnist(experiences: list[list[int]], dataset_path: str = "../single_di
 
         for n in t_:  # for each experience concatenate the numbers
             num_x, num_y = torch.load(f"{dataset_path}/num_{n}.pt")
+
+            if max_sampling != -1:
+                num_x, num_y = num_x[:max_sampling], num_y[:max_sampling]
 
             img_x = num_x if img_x is None else cat([img_x, num_x])
             img_y = num_y if img_y is None else cat([img_y, num_y])

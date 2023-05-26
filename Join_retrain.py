@@ -34,7 +34,7 @@ class Join_retrain:
             # Define the number of images to generate, we allocate a fixed number of slots for each number of class
             # encountered
             img_to_create = self.buff_img * past_classes.size(0)
-            gen_buffer = zeros((img_to_create, self.channels, self.img_size, self.img_size))
+            gen_buffer = zeros((img_to_create, self.channels, self.img_size, self.img_size), device=self.device)
 
             self.g.eval()
             with no_grad():
@@ -46,14 +46,14 @@ class Join_retrain:
                     while to_generate > 0:
                         batch_size = min(256, to_generate)
                         gen_label = full((batch_size,), i, device=device)
-                        gen_buffer[count:count + batch_size] = self.g(gen_label).cpu()
+                        gen_buffer[count:count + batch_size] = self.g(gen_label)
 
                         count += batch_size
                         to_generate -= batch_size
             self.g.train()
 
             # In the end, we concat the replay generated and the current batch of image (new classes)
-            custom_x = cat((real_image, gen_buffer), dim=0)
+            custom_x = cat((real_image, gen_buffer.cpu()), dim=0)
             custom_y = cat(
                 (real_label, past_classes.repeat_interleave(self.buff_img)),
                 dim=0)
