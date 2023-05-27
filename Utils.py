@@ -70,6 +70,16 @@ def generate_mnist_dataset(dataset_path: str, temp_path: str = "temp_mnist"):
 
 def custom_mnist(experiences: list[list[int]], max_sampling: int = -1,
                  dataset_path: str = "../single_digit") -> tuple[list, Tensor, Tensor]:
+    """
+    Generates a custom version of mnist based on the experience's list.
+
+    We have introduced a max_sampling because in the "join retrain", we concatenate the current
+    experience (the digits inside the lists) with the buffer replay. Naive approach leads to an imbalanced
+    problem because the digits in the new experiences are roughly 6k (per classes) and the number digits
+    in the buffer is a hyperparameter. To balance the classes, we adopt "max_sampling" where we limit the
+    number of examples per classes in the new experiences.
+    :return:
+    """
     # check if the dataset is ready
     generate_mnist_dataset(dataset_path)
 

@@ -236,7 +236,8 @@ class Trainer:
             but the "alignment" is performed with the past classes".
             """
             if idx > 0:
-                prev_classes = current_classes if prev_classes is None else cat((prev_classes, current_classes))
+                prev_classes = copy.deepcopy(current_classes) if prev_classes is None else cat(
+                    (prev_classes, current_classes))
 
             current_classes = tensor(classes)  # Transform into tensor the classes list
 
